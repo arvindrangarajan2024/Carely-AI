@@ -12,3 +12,4 @@ class TokenData(BaseModel):
     """Token data schema"""
     email: str | None = None
 
+

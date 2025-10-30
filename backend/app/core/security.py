@@ -68,3 +68,4 @@ async def get_current_user(
     # For now, returning a simple dict
     return {"id": user_id, "email": payload.get("email")}
 
+

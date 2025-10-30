@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.core.config import settings
 from app.core.security import get_current_user
@@ -27,15 +27,18 @@ async def create_appointment(
             detail="Not authorized to create appointments for other patients"
         )
     
+    # Get current time (make timezone-aware if appointment time is timezone-aware)
+    now = datetime.now(timezone.utc) if appointment.scheduled_time.tzinfo else datetime.now()
+    
     # Validate appointment is within allowed time range
-    max_future_date = datetime.now() + timedelta(days=settings.MAX_APPOINTMENT_DAYS_AHEAD)
+    max_future_date = now + timedelta(days=settings.MAX_APPOINTMENT_DAYS_AHEAD)
     if appointment.scheduled_time > max_future_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Appointments can only be scheduled up to {settings.MAX_APPOINTMENT_DAYS_AHEAD} days in advance"
         )
     
-    if appointment.scheduled_time < datetime.now():
+    if appointment.scheduled_time < now:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot schedule appointments in the past"
@@ -159,4 +162,5 @@ async def cancel_appointment(
     db.commit()
     
     return None
+
 

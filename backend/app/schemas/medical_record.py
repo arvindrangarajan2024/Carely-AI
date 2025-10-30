@@ -50,3 +50,4 @@ class MedicalRecordResponse(MedicalRecordBase):
     class Config:
         from_attributes = True
 
+

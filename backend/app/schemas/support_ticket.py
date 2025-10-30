@@ -44,3 +44,4 @@ class SupportTicketResponse(SupportTicketBase):
     class Config:
         from_attributes = True
 
+

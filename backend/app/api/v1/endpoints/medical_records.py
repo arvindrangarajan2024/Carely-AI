@@ -118,3 +118,4 @@ async def update_medical_record(
     
     return record
 
+

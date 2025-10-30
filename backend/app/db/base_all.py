@@ -7,3 +7,6 @@ from app.models.appointment import Appointment  # noqa
 from app.models.medical_record import MedicalRecord  # noqa
 from app.models.support_ticket import SupportTicket  # noqa
 
+
+
+

@@ -58,3 +58,4 @@ class PatientLogin(BaseModel):
     email: EmailStr
     password: str
 
+

@@ -106,3 +106,4 @@ async def deactivate_patient(
     
     return None
 
+

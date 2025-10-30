@@ -20,3 +20,4 @@ api_router.include_router(appointments.router, prefix="/appointments", tags=["Ap
 api_router.include_router(medical_records.router, prefix="/medical-records", tags=["Medical Records"])
 api_router.include_router(support_tickets.router, prefix="/support-tickets", tags=["Support Tickets"])
 
+
