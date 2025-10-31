@@ -7,7 +7,8 @@ from app.api.v1.endpoints import (
     appointments,
     medical_records,
     support_tickets,
-    health
+    health,
+    chat
 )
 
 api_router = APIRouter()
@@ -19,5 +20,6 @@ api_router.include_router(patients.router, prefix="/patients", tags=["Patients"]
 api_router.include_router(appointments.router, prefix="/appointments", tags=["Appointments"])
 api_router.include_router(medical_records.router, prefix="/medical-records", tags=["Medical Records"])
 api_router.include_router(support_tickets.router, prefix="/support-tickets", tags=["Support Tickets"])
+api_router.include_router(chat.router, prefix="/chat", tags=["Chat"])
 
 
