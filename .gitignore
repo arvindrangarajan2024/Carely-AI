@@ -1,0 +1,27 @@
+# Ignore compiled output and temporary files
+/build/
+/dist/
+*.log
+*.tmp
+*.bak
+
+# Ignore dependency directories
+/node_modules/
+/vendor/
+
+# Ignore environment-specific configuration files
+.env
+.env.local
+config/local.php
+
+# Ignore operating system files
+.DS_Store
+Thumbs.db
+
+# Ignore IDE-specific files
+.idea/
+.vscode/
+
+# Ignore sensitive files
+/secrets/
+id_rsa
