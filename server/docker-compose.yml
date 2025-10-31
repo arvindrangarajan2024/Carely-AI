@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    container_name: carely-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./carely.db
+      - DEBUG=True
+    volumes:
+      - ./app:/app/app
+      - ./carely.db:/app/carely.db
+    restart: unless-stopped
+
+  # PostgreSQL database (optional, uncomment if needed)
+  # db:
+  #   image: postgres:15
+  #   container_name: carely-db
+  #   environment:
+  #     POSTGRES_USER: carely
+  #     POSTGRES_PASSWORD: carely123
+  #     POSTGRES_DB: carely
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   restart: unless-stopped
+
+# volumes:
+#   postgres_data:
+
+
+
+
