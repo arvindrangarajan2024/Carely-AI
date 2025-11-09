@@ -10,6 +10,25 @@ interface Message {
   text: string;
   isUser: boolean;
   isLoading?: boolean;
+  appointmentData?: {
+    action?: string;
+    appointment_id?: number;
+    success?: boolean;
+    error?: string;
+    slots?: Array<{
+      datetime: string;
+      formatted: string;
+      available: boolean;
+    }>;
+    appointment_details?: {
+      appointment_type: string;
+      doctor_name: string;
+      scheduled_time: string;
+      reason: string;
+      is_virtual: boolean;
+      duration_minutes: number;
+    };
+  };
 }
 
 const Chat = () => {
@@ -77,6 +96,7 @@ const Chat = () => {
             id: Date.now().toString(),
             text: response.response,
             isUser: false,
+            appointmentData: response.appointment_data,
           },
         ];
       });
@@ -110,6 +130,7 @@ const Chat = () => {
               message={message.text}
               isUser={message.isUser}
               isLoading={message.isLoading}
+              appointmentData={message.appointmentData}
             />
           ))}
           <div ref={messagesEndRef} />

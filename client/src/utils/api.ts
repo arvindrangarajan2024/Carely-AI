@@ -57,6 +57,25 @@ export interface ChatMessageResponse {
   response: string;
   message_id?: string;
   conversation_id: string;
+  appointment_data?: {
+    action?: string;
+    appointment_id?: number;
+    success?: boolean;
+    error?: string;
+    slots?: Array<{
+      datetime: string;
+      formatted: string;
+      available: boolean;
+    }>;
+    appointment_details?: {
+      appointment_type: string;
+      doctor_name: string;
+      scheduled_time: string;
+      reason: string;
+      is_virtual: boolean;
+      duration_minutes: number;
+    };
+  };
 }
 
 // Get stored access token

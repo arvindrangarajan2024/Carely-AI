@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from openai import OpenAI
 import uuid
+import json
 
 from app.core.config import settings
 from app.core.security import get_current_user
@@ -10,6 +11,8 @@ from app.schemas.chat import ChatMessageRequest, ChatMessageResponse
 from app.db.session import get_db
 from app.models.chat_conversation import ChatConversation
 from app.models.chat_message import ChatMessage
+from app.models.appointment import Appointment
+from app.agents.appointment_agent import AppointmentAgent
 
 router = APIRouter()
 
@@ -19,17 +22,28 @@ Your role is to:
 - Provide clear, accurate, and empathetic responses to healthcare-related questions
 - Help users understand medical information in accessible terms
 - Guide users on when to seek professional medical care
+- Help users book medical appointments when requested
 - Never provide diagnoses or replace professional medical advice
 - Always remind users to consult with healthcare professionals for serious medical concerns, diagnoses, or treatment decisions
 - Be supportive, understanding, and maintain patient confidentiality
 - If asked about medications, symptoms, or treatments, emphasize the importance of consulting healthcare providers
 
+When users want to schedule appointments:
+- Ask for the type of appointment (consultation, follow-up, emergency, check-up, etc.)
+- Ask for their preferred date and time
+- Ask for the reason for the appointment
+- Offer both in-person and virtual options
+- Use the get_available_slots function to show available times
+- Use the book_appointment function to create the appointment once they confirm
+
 Remember: You are an assistant that provides information and guidance, but not medical diagnoses or treatment prescriptions."""
 
-# Initialize OpenAI client
+# Initialize OpenAI client and Appointment Agent
 openai_client = None
+appointment_agent = None
 if settings.OPENAI_API_KEY:
     openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+    appointment_agent = AppointmentAgent(openai_client)
 
 
 @router.post("/", response_model=ChatMessageResponse, status_code=status.HTTP_200_OK)
@@ -94,27 +108,44 @@ async def chat(
             ChatMessage.conversation_id == conversation.conversation_id
         ).order_by(ChatMessage.created_at.asc()).all()
         
-        # Build messages array with system prompt, history, and current message
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        
-        # Add conversation history
+        # Build conversation history for agent
+        conversation_history = []
         for msg in history_messages:
-            messages.append({
+            conversation_history.append({
                 "role": msg.role,
                 "content": msg.content
             })
         
-        # Add current user message
-        messages.append({"role": "user", "content": user_message})
+        # Check if this is an appointment-related request
+        appointment_intent = appointment_agent.detect_appointment_intent(user_message) if appointment_agent else None
         
-        # Call OpenAI API using responses.create
-        response = openai_client.responses.create(
-            model="gpt-5-mini",  # or another available model
-            input=messages
-        )
+        ai_response = ""
+        appointment_data = None
         
-        # Extract the response text
-        ai_response = response.output_text.strip()
+        if appointment_intent:
+            # Use appointment agent to handle the request
+            ai_response, appointment_data = await appointment_agent.process_appointment_request(
+                message=user_message,
+                conversation_history=conversation_history,
+                patient_id=patient_id,
+                db=db,
+                intent=appointment_intent
+            )
+        else:
+            # Use general medical assistant
+            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            messages.extend(conversation_history)
+            messages.append({"role": "user", "content": user_message})
+            
+            # Call OpenAI API
+            response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0.7,
+                max_tokens=1000
+            )
+            
+            ai_response = response.choices[0].message.content.strip()
         
         # Generate message IDs for tracking
         user_message_id = str(uuid.uuid4())
@@ -143,11 +174,18 @@ async def chat(
         
         db.commit()
         
-        return ChatMessageResponse(
+        # Build response
+        response_data = ChatMessageResponse(
             response=ai_response,
             message_id=assistant_message_id,
             conversation_id=conversation.conversation_id
         )
+        
+        # Add appointment data if present
+        if appointment_data:
+            response_data.appointment_data = appointment_data
+        
+        return response_data
     
     except HTTPException:
         raise

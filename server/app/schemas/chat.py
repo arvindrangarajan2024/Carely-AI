@@ -1,6 +1,6 @@
 """Chat schemas"""
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Dict, Any
 
 
 class ChatMessageRequest(BaseModel):
@@ -14,4 +14,5 @@ class ChatMessageResponse(BaseModel):
     response: str = Field(..., description="AI assistant response")
     message_id: str | None = Field(None, description="Optional message ID for tracking")
     conversation_id: str = Field(..., description="Conversation ID for this message")
+    appointment_data: Optional[Dict[str, Any]] = Field(None, description="Appointment booking data if applicable")
 
