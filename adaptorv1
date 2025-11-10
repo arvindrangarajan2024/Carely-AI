@@ -1,0 +1,163 @@
+
+
+class adaptorv1:
+
+    def __init__(self, appt_base: str, qna_base: str, api_key: str, user_context: dict | None= None, storage: Any | None= None,
+        use_internal: bool = True,                         
+        appointment_create_fn: Optional[Callable] = None, 
+        ticket_create_fn: Optional[Callable] = None ):
+      
+        self.appt_base = appt_base.rstrip("/")
+        self.qna_base  = qna_base.rstrip("/")
+        self.api_key   = api_key
+        self.storage = storage
+        self.user_context  = user_context or {}
+        self.use_internal = use_internal 
+        self.appointment_create_fn = appointment_create_fn
+        self.ticket_create_fn = ticket_create_fn
+
+        self.base_headers = {"Content-Type": "application/json"}
+        if api_key:
+            self.base_headers["Authorization"] = f"Bearer {api_key}"
+
+
+    def iso_time(self) -> str:
+      return datetime.now().astimezone().isoformat(timespec= "seconds")
+
+
+
+
+    #
+    def send_to_backend(self, route_result0: dict, extras: dict | None = None) -> dict:
+      extras = extras or {}
+      route_result = route_result0.copy()
+
+      intent_ = route_result.get("intent", "")
+      action_ = route_result.get("action", "")
+      text_ = route_result.get("payload", {}).get("text", "")
+      language_ = route_result.get("payload", {}).get("language", "")
+
+      if intent_ == "scheduling" and (action_ in ("", "book_appointment")):
+        patient_id      = self.user_context.get("patient_id") or extras.get("patient_id")
+        doctor_name     = extras.get("doctor_name")
+        scheduled_time  = extras.get("scheduled_time")
+        appointment_type= extras.get("appointment_type")
+        duration_minutes= extras.get("duration_minutes", 30)
+        is_virtual      = extras.get("is_virtual", False)
+        location        = extras.get("location")
+        reason          = extras.get("reason", text_)
+        notes           = extras.get("notes")
+
+        missing_keys = []
+        if not doctor_name:
+          missing_keys.append("doctor_name")
+        if not patient_id:
+          missing_keys.append("patient_id")
+        if not location:
+          missing_keys.append("location")
+        if not scheduled_time:
+          missing_keys.append("scheduled_time")
+        if not appointment_type:
+          missing_keys.append("appointment_type")
+
+        ask_more_info = {
+                    "ok": False,
+                    "type": "need_clarification",
+                    "missing": missing_keys,
+                    "display_text": "Please provide: " + ", ".join(missing_keys),
+                    "route": route_result
+          }
+        if missing_keys:
+          return ask_more_info
+
+        payload = {
+                "doctor_name": doctor_name,
+                "appointment_type": appointment_type or "consult",
+                "scheduled_time": scheduled_time,    
+                "duration_minutes": duration_minutes,
+                "reason": reason,
+                "notes": notes,
+                "location": location,
+                "is_virtual": bool(is_virtual),
+                "patient_id": patient_id,
+                "language": language_
+            }
+
+        if self.use_internal:
+          if not self.appointment_create_fn:
+            return {"ok": False, "error": "Internal service not wired: appointments_create_fn"}
+          try:
+            data = self.appointmen_create_fn(payload)
+            return {"ok": True, "service": "appointment.create", "data": data}
+          except Exception as e:
+            return {"ok": False, "error": "InternalError", "detail": str(e)}
+        
+        else:
+          url  = f"{self.appt_base}/appointments"
+          resp = requests.post(url, json=payload, headers=self.base_headers, timeout=20)
+          if 200 <= resp.status_code < 300:
+            return {"ok": True, "service": "appointment.create", "data": resp.json()}
+          else:
+            return {"ok": False, "error": f"HTTP {resp.status_code}", "detail": resp.text}
+
+
+      if intent_ in ("qna", "general", "general_qna"):
+        level = {"high", "medium", "low"}
+        priority = (extras.get("priority") or "medium").lower()
+        if priority not in level:
+          priority = "medium"
+        support_ticket = {
+                "category": extras.get("category", "general"),
+                "subject": extras.get("subject", text_[:60] or "Question"),
+                "description": extras.get("description", text_),
+                "language": language_.lower()[:2],
+                "priority": priority,
+                "contact_email": extras.get("contact_email")
+            }
+
+
+        if self.use_internal:
+          if not self.ticket_create_fn:
+            return {"ok": False, "error": "Internal service not wired: tickets_create_fn"}
+          try:
+            data = self.ticket_create_fn(support_ticket)
+            return {"ok": True, "service": "tickets.create", "data": data}
+          except Exception as e:
+            return {"ok": False, "error": "InternalError", "detail": str(e)}
+        
+        else:
+          url  = f"{self.qna_base}/tickets"
+          resp = requests.post(url, json=support_ticket, headers=self.base_headers, timeout=20)
+          if 200 <= resp.status_code < 300:
+            return {"ok": True, "service": "ticket.create", "data": resp.json()}
+          else:
+            return {"ok": False, "error": f"HTTP {resp.status_code}", "detail": resp.text}
+
+      else:
+        return {"ok": False, "error": f"Unsupported intent: {intent_}", "routing": route_result}
+
+
+
+
+    def send_to_frontend(self, route_result0: dict, backend_resp: dict) -> dict:
+      if backend_resp.get("ok"):
+        if route_result0["next_service"] == "appointment_service":
+          return {"service_type": "appointment confirmation",
+                            "context": "Your appointment is confirmed.",
+                            "routing": route_result0, "backend": backend_resp}
+        elif route_result0["next_service"] == "qna_service":
+          return {"service_type": "ticket confirmation",
+                            "context": "Support ticket submitted.",
+                            "routing": route_result0, "backend": backend_resp}
+        elif route_result0["next_service"] == "frontend":
+          return {"service_type": "More information needed",
+                            "context": "In order to better assist you, we might need you to provide more information.",
+                            "routing": route_result0, "backend": backend_resp}
+        else:
+          return {"service_type": "N/A",
+                            "context": "No message to show; service type N/A.",
+                            "routing": route_result0, "backend": backend_resp}
+
+    #
+    #
+    #
