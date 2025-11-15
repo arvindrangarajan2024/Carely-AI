@@ -1,0 +1,209 @@
+disclaimer_txt = "This is general medical information; if you have an emergency situation, please dial 911."
+
+# define class
+
+class AgentLogic1:
+
+    def __init__(self, intent_map: dict[str, List[str]], disclaimer: str, scheduling=None, qna=None):
+
+      self.intent = intent_map
+      self.disclaimer = disclaimer
+
+      self.stemmer = PorterStemmer()
+      self.sch_intent_scanned = [self.stemmer.stem(word1) for word1 in self.intent['Scheduling']]
+      self.qna_intent_scanned = [self.stemmer.stem(word2) for word2 in self.intent['Q&A']]
+
+      self.scheduling = scheduling
+      self.qna = qna
+
+
+    def token_word(self, en_info: str):
+      tokens_from_info = re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?|[0-9]+", en_info or "")
+      token1b1 = [t.lower() for t in tokens_from_info]
+      return token1b1
+
+  #stemming
+    def words_subwords_scanner(self, token: str) -> str:
+      """
+      Use subword tokenization and word match checking to detect the intention of the sentence: scheduling or general Q&A?
+      """
+      task = None
+      subword = self.stemmer.stem(token)
+
+      if subword in self.sch_intent_scanned or token in self.intent['Scheduling']:
+        task = "Scheduling"
+        return task
+      if subword in self.qna_intent_scanned or token in self.intent['Q&A']:
+        task = "Q&A"
+        return task
+
+      return None
+
+
+    def sentence_scanner(self, en_info: str):
+      """
+      scan the entire sentence to look for keyword(s).
+      """
+      individual_tokens = self.token_word(en_info)
+      scanned_results = {
+          "schema_version": "1.0", #0
+          "intent": None,  #1
+          "confidence": None,    #2
+          "rationale": None, #3
+          "counts": {"scheduling": 0, "qna": 0}, #4
+          "evidence": [], #5
+          "source": "stemming rule", #6
+          "raw_text": en_info, #7
+          }
+
+      for i, one_token in enumerate(individual_tokens):
+        task_name = self.words_subwords_scanner(one_token)
+        if task_name is not None:
+          match = True
+          one_result = {"index": i, "keyword": one_token, "specific_task": task_name, "match": match}
+          scanned_results["evidence"].append(one_result)
+
+      #scheduling_count & qna_count
+      scanned_results["counts"]["scheduling"] = sum(1 for r in scanned_results["evidence"] if r.get("specific_task") == "Scheduling")
+      scanned_results["counts"]["qna"] = sum(1 for r in scanned_results["evidence"] if r.get("specific_task") == "Q&A")
+      scheduling_count = scanned_results["counts"]["scheduling"]
+      qna_count = scanned_results["counts"]["qna"]
+
+      #confidence
+      total = max(1, scheduling_count+qna_count)
+      distanceA = abs(scheduling_count - qna_count)
+      confi_score = 0.5 + 0.5 * (distanceA / total)
+
+      scanned_results["confidence"] = confi_score
+
+
+      if scheduling_count > qna_count:
+        scanned_results["intent"] =  "scheduling"
+        scanned_results["rationale"] = "keyword votes favor scheduling"
+      elif scheduling_count < qna_count:
+        scanned_results["intent"] = "qna"
+        scanned_results["rationale"] = "keyword votes favor qna"
+      elif scheduling_count == qna_count:
+        scanned_results["intent"] = "user_decision"
+        scanned_results["rationale"] = "keyword votes equal (>=0) or unusual text, favor user's decision"
+
+      return scanned_results
+
+    def llm_intent_judge0(self, context1: List[dict[str,str]], en_info: str) -> str: # Chat Completions
+      """
+      Try to have LLM to do the work.
+      """
+      api_key = os.getenv("OPENAI_API_KEY")
+
+      if not api_key:
+        raise RuntimeError("API key needed")
+
+      client= OpenAI(api_key=api_key)
+
+      instruction=list(context1)
+      instruction.append({"role": "user", "content": f"message: {en_info}"})
+
+      response= client.chat.completions.create(model="gpt-4o-mini", messages=instruction, temperature=0)
+      return response.choices[0].message.content
+
+    def llm_intent_judge(self, context1: List[dict[str,str]], en_info: str) -> str: # response API - selected
+      """
+      Try to have LLM to do the work.
+      """
+      api_key = os.getenv("OPENAI_API_KEY")
+
+      if not api_key:
+        raise RuntimeError("API key needed")
+
+      client= OpenAI(api_key=api_key)
+
+      instruction=list(context1)
+      instruction.append({"role": "user", "content": f"message: {en_info}"})
+
+      try:
+        response= client.responses.create(model="gpt-4o-mini", input=instruction, temperature=0)
+        try:
+          llm_output = json.loads(response.output_text) #make it python dictionary
+        except Exception:
+          llm_output = {
+              "schema_version": "1.0",
+              "intent": "user_decision",
+              "confidence": 0.5,
+              "rationale": "invalid llm json",
+              "counts": None,
+              "evidence": None,
+              "source": "llm",
+              "raw_text": en_info
+              }
+
+        return llm_output
+      except Exception:
+        return {
+              "schema_version": "1.0",
+              "intent": "user_decision",
+              "confidence": 0.5,
+              "rationale": "invalid llm json",
+              "counts": None,
+              "evidence": None,
+              "source": "llm",
+              "raw_text": en_info
+              }
+#
+
+    def hybrid_routing_judge(self, context1: List[dict[str,str]], en_info: str) -> Dict:
+      if not en_info:
+        return {
+            "schema_version": "1.0",
+            "intent": "user_decision",
+            "confidence": 0.5,
+            "rationale": "empty or missing text",
+            "counts": {"scheduling": 0, "qna": 0},
+            "evidence": [],
+            "source": "guard",
+            "raw_text": en_info or ""
+        }
+
+      stem_result = self.sentence_scanner(en_info)
+
+      if stem_result["confidence"] < 0.6:
+        final_routing = self.llm_intent_judge(context1=context1, en_info=en_info)
+      else:
+        final_routing = stem_result
+
+      return final_routing
+
+    def route_decision(self, context1: List[dict[str,str]], en_info: str) -> Dict:
+      route_judgment = self.hybrid_routing_judge(context1, en_info)
+
+      intent = str(route_judgment.get("intent", "user_decision"))
+      try:
+        confidence = float(route_judgment.get("confidence", 0.5))
+      except Exception:
+        confidence = 0.5
+
+      if confidence >= 0.6:
+        if intent == "scheduling":
+          next_service = "appointment_service"
+          action = "book_appointment"
+
+        elif intent == "qna":
+          next_service = "qna_service"
+          action = "answer_question"
+        else:
+          next_service = "frontend"
+          action = "ask_user_decision"
+
+      else:
+          next_service = "frontend"
+          action = "ask_user_decision"
+
+      return {
+        "intent": route_judgment["intent"],
+        "confidence": route_judgment["confidence"],
+        "next_service": next_service,
+        "action": action,
+        "payload": {
+          "text": en_info,
+          "language": route_judgment.get("language", "English")
+    }
+    }
