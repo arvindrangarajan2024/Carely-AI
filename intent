@@ -1,0 +1,12 @@
+intent = {
+    "Scheduling": [
+        "schedule","appointment","book","doctor","meeting","make","time","cancel", "update",
+        "reschedule","date","available","availability","department","visit",
+        "slot","slots","openings","see","see a doctor","follow-up","check-in"
+    ],
+    "Q&A": [
+        "question","query","general","answer","ask","hours","how","what","which","when",
+        "side effect","side effects","dosage","dose","instruction","policy","coverage",
+        "benefit","copay","cost","price","refill","medication","medicine","symptom","faq"
+    ]
+}
